@@ -1,0 +1,16 @@
+# Maven
+target/
+
+# Eclipse
+.classpath
+.project
+.settings/
+bin/
+
+# System und Logs
+*.log
+Thumbs.db
+.DS_Store
+
+# Autosave und Testdateien von UMLStudio
+*.umls.autosave
