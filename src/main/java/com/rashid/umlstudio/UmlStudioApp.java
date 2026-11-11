@@ -10,6 +10,7 @@ import com.rashid.umlstudio.model.catalog.Catalog;
 import com.rashid.umlstudio.view.DiagramView;
 import com.rashid.umlstudio.view.EigenschaftenPanel;
 import com.rashid.umlstudio.view.Palette;
+import com.rashid.umlstudio.view.PruefDialog;
 
 import javafx.application.Application;
 import javafx.geometry.Insets;
@@ -25,7 +26,7 @@ import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.stage.Stage;
 
-/** Hauptfenster mit Controller, Palette, Eigenschaften und Undo/Redo. */
+/** Hauptfenster mit Undo/Redo und struktureller Modellprüfung. */
 public class UmlStudioApp extends Application {
 
     public static final String TITEL = "UMLStudio";
@@ -58,8 +59,11 @@ public class UmlStudioApp extends Application {
         ToggleButton verbinden = new ToggleButton("Verbinden");
         verbinden.setOnAction(e -> ansicht.setVerbindenModus(verbinden.isSelected()));
 
+        Button pruefen = new Button("Diagramm prüfen");
+        pruefen.setOnAction(e -> PruefDialog.anzeigen(stage, controller.getDiagram()));
+
         HBox leiste = new HBox(10,
-                rueckgaengig, wiederholen,
+                rueckgaengig, wiederholen, pruefen,
                 new Label("Verbindungsart:"), art, verbinden,
                 new Label("Strg+Z / Strg+Y"));
         leiste.setPadding(new Insets(8));
@@ -75,7 +79,7 @@ public class UmlStudioApp extends Application {
         wurzel.setCenter(scroll);
         wurzel.setRight(eigenschaften);
 
-        // Eine zentrale Aktualisierung verhindert widersprüchliche Anzeigen.
+        // Alle Ansichten werden zentral nach einer Änderung aktualisiert.
         controller.setNachAenderung(() -> {
             ansicht.aktualisieren();
             eigenschaften.anzeigen(controller.getAusgewaehlt().orElse(null));
@@ -94,7 +98,7 @@ public class UmlStudioApp extends Application {
         ansicht.zeichnen();
     }
 
-    /** Die Tastenkürzel bedienen die Diagrammhistorie, auch im Textfeld. */
+    /** Bedient die Diagrammhistorie, auch wenn ein Textfeld aktiv ist. */
     private static void tastenkuerzel(KeyEvent e, DocumentController controller) {
         if (!e.isControlDown() || e.isAltDown() || e.isMetaDown()) {
             return;
@@ -111,7 +115,7 @@ public class UmlStudioApp extends Application {
         }
     }
 
-    /** Das Startbeispiel gehört nicht zur Undo-Historie. */
+    /** Erstellt das bekannte Startbeispiel außerhalb der Undo-Historie. */
     private Diagram beispielDiagramm() {
         Diagram d = Catalog.neuesDiagramm(Catalog.KLASSENDIAGRAMM, "Beispiel");
         Node paket = Catalog.neuesElement("class", "package", "model", 40, 40);

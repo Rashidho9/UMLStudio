@@ -1,7 +1,6 @@
 package com.rashid.umlstudio.view;
 
-import com.rashid.umlstudio.model.Diagram;
-import com.rashid.umlstudio.model.ElementBearbeitung;
+import com.rashid.umlstudio.controller.DocumentController;
 import com.rashid.umlstudio.model.Node;
 
 import javafx.geometry.Insets;
@@ -12,23 +11,32 @@ import javafx.scene.layout.GridPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 
-/** Zeigt und bearbeitet die Eigenschaften des ausgewählten Elements. */
+/**
+ * Zeigt die Eigenschaften des ausgewählten Elements an.
+ * Änderungen laufen über den Controller, damit Undo und Redo möglich sind.
+ */
 public class EigenschaftenPanel extends VBox {
 
-    private final Diagram diagram;
-    private final Runnable nachAenderung;
+    private final DocumentController controller;
+
     private final TextField nameFeld = new TextField();
     private final TextField xFeld = new TextField();
     private final TextField yFeld = new TextField();
     private final TextField breiteFeld = new TextField();
     private final TextField hoeheFeld = new TextField();
+
     private final Label fehler = new Label();
     private final Button uebernehmen = new Button("Übernehmen");
+
     private Node aktuell;
 
-    public EigenschaftenPanel(Diagram diagram, Runnable nachAenderung) {
-        this.diagram = diagram;
-        this.nachAenderung = nachAenderung;
+    /**
+     * Erstellt das Eigenschaftsfenster.
+     *
+     * @param controller Controller des bearbeiteten Diagramms
+     */
+    public EigenschaftenPanel(DocumentController controller) {
+        this.controller = controller;
 
         setSpacing(8);
         setPadding(new Insets(10));
@@ -40,6 +48,7 @@ public class EigenschaftenPanel extends VBox {
         GridPane gitter = new GridPane();
         gitter.setHgap(6);
         gitter.setVgap(6);
+
         zeile(gitter, 0, "Name", nameFeld);
         zeile(gitter, 1, "X", xFeld);
         zeile(gitter, 2, "Y", yFeld);
@@ -48,10 +57,13 @@ public class EigenschaftenPanel extends VBox {
 
         fehler.setTextFill(Color.web("#c62828"));
         fehler.setWrapText(true);
+
         uebernehmen.setMaxWidth(Double.MAX_VALUE);
         uebernehmen.setOnAction(e -> uebernehmen());
 
         getChildren().addAll(titel, gitter, uebernehmen, fehler);
+
+        // Zu Beginn ist noch kein Element ausgewählt.
         anzeigen(null);
     }
 
@@ -63,10 +75,16 @@ public class EigenschaftenPanel extends VBox {
         gitter.add(feld, 1, zeile);
     }
 
-    /** Aktualisiert nur die Anzeige, nicht das Modell. */
+    /**
+     * Zeigt die aktuellen Eigenschaften an, ohne das Modell zu verändern.
+     * Ohne Auswahl werden die Felder geleert und deaktiviert.
+     *
+     * @param n ausgewähltes Element oder null
+     */
     public void anzeigen(Node n) {
         aktuell = n;
         boolean an = n != null;
+
         nameFeld.setDisable(!an);
         xFeld.setDisable(!an);
         yFeld.setDisable(!an);
@@ -87,25 +105,26 @@ public class EigenschaftenPanel extends VBox {
             breiteFeld.setText(Double.toString(n.getW()));
             hoeheFeld.setText(Double.toString(n.getH()));
         }
+
         fehler.setText("");
     }
 
-    /** Prüft Eingaben und zeichnet nach erfolgreicher Änderung neu. */
+    /** Übergibt die Eingaben zur Prüfung und Bearbeitung an den Controller. */
     private void uebernehmen() {
         if (aktuell == null) {
             return;
         }
-        String meldung = ElementBearbeitung.anwenden(
-                diagram, aktuell, nameFeld.getText(),
-                xFeld.getText(), yFeld.getText(),
-                breiteFeld.getText(), hoeheFeld.getText());
+
+        String meldung = controller.eigenschaftenUebernehmen(
+                aktuell,
+                nameFeld.getText(),
+                xFeld.getText(),
+                yFeld.getText(),
+                breiteFeld.getText(),
+                hoeheFeld.getText());
+
         if (meldung != null) {
             fehler.setText(meldung);
-            return;
-        }
-        anzeigen(aktuell);
-        if (nachAenderung != null) {
-            nachAenderung.run();
         }
     }
 }
