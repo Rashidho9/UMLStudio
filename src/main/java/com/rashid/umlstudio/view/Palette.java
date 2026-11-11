@@ -1,9 +1,7 @@
 package com.rashid.umlstudio.view;
 
-import java.util.function.Consumer;
-
+import com.rashid.umlstudio.controller.DocumentController;
 import com.rashid.umlstudio.model.Diagram;
-import com.rashid.umlstudio.model.Node;
 import com.rashid.umlstudio.model.catalog.Catalog;
 import com.rashid.umlstudio.model.catalog.NodeKind;
 
@@ -12,14 +10,11 @@ import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.layout.VBox;
 
-/** Palette zum Hinzufügen der im Katalog erlaubten Elementarten. */
+/** Fügt Elemente über den Controller hinzu, damit Undo möglich ist. */
 public class Palette extends VBox {
 
-    /**
-     * @param diagram das bearbeitete Diagramm
-     * @param hinzugefuegt wird nach dem Hinzufügen mit dem neuen Element aufgerufen
-     */
-    public Palette(Diagram diagram, Consumer<Node> hinzugefuegt) {
+    public Palette(DocumentController controller) {
+        Diagram diagram = controller.getDiagram();
         setSpacing(8);
         setPadding(new Insets(10));
         setPrefWidth(170);
@@ -32,15 +27,9 @@ public class Palette extends VBox {
             Button knopf = new Button(art.label());
             knopf.setMaxWidth(Double.MAX_VALUE);
             knopf.setOnAction(e -> {
-                // Wiederholter Versatz verhindert eine immer weiter entfernte Startposition.
                 int versatz = (diagram.getNodes().size() % 8) * 24;
-                Node neu = Catalog.neuesElement(
-                        diagram.getType(), art.id(), art.label(),
+                controller.elementHinzufuegen(art.id(), art.label(),
                         80 + versatz, 80 + versatz);
-                diagram.addNode(neu);
-                if (hinzugefuegt != null) {
-                    hinzugefuegt.accept(neu);
-                }
             });
             getChildren().add(knopf);
         }

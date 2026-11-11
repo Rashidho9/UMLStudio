@@ -2,6 +2,7 @@ package com.rashid.umlstudio;
 
 import java.util.List;
 
+import com.rashid.umlstudio.controller.DocumentController;
 import com.rashid.umlstudio.model.Diagram;
 import com.rashid.umlstudio.model.Edge;
 import com.rashid.umlstudio.model.Node;
@@ -13,15 +14,18 @@ import com.rashid.umlstudio.view.Palette;
 import javafx.application.Application;
 import javafx.geometry.Insets;
 import javafx.scene.Scene;
+import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.ToggleButton;
+import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.stage.Stage;
 
-/** Hauptfenster mit Palette, Zeichenfläche und Eigenschaftsfenster. */
+/** Hauptfenster mit Controller, Palette, Eigenschaften und Undo/Redo. */
 public class UmlStudioApp extends Application {
 
     public static final String TITEL = "UMLStudio";
@@ -33,14 +37,18 @@ public class UmlStudioApp extends Application {
     @Override
     public void start(Stage stage) {
         Diagram diagram = beispielDiagramm();
-        DiagramView ansicht = new DiagramView(diagram);
+        DocumentController controller = new DocumentController(diagram);
+        DiagramView ansicht = new DiagramView(controller);
         ansicht.setMinSize(1100, 750);
         ansicht.setPrefSize(1100, 750);
 
-        EigenschaftenPanel eigenschaften =
-                new EigenschaftenPanel(diagram, ansicht::zeichnen);
-        Palette palette = new Palette(diagram, ansicht::auswaehlen);
-        ansicht.setAuswahlListener(eigenschaften::anzeigen);
+        EigenschaftenPanel eigenschaften = new EigenschaftenPanel(controller);
+        Palette palette = new Palette(controller);
+
+        Button rueckgaengig = new Button("Rückgängig");
+        Button wiederholen = new Button("Wiederholen");
+        rueckgaengig.setOnAction(e -> controller.rueckgaengig());
+        wiederholen.setOnAction(e -> controller.wiederholen());
 
         ComboBox<String> art = new ComboBox<>();
         art.getItems().addAll(VERBINDUNGEN);
@@ -48,12 +56,12 @@ public class UmlStudioApp extends Application {
         art.setOnAction(e -> ansicht.setVerbindungsart(art.getValue()));
 
         ToggleButton verbinden = new ToggleButton("Verbinden");
-        verbinden.setOnAction(
-                e -> ansicht.setVerbindenModus(verbinden.isSelected()));
+        verbinden.setOnAction(e -> ansicht.setVerbindenModus(verbinden.isSelected()));
 
         HBox leiste = new HBox(10,
+                rueckgaengig, wiederholen,
                 new Label("Verbindungsart:"), art, verbinden,
-                new Label("Ziehen = verschieben | Verbinden = Verbindung ziehen"));
+                new Label("Strg+Z / Strg+Y"));
         leiste.setPadding(new Insets(8));
 
         ScrollPane scroll = new ScrollPane(ansicht);
@@ -67,13 +75,43 @@ public class UmlStudioApp extends Application {
         wurzel.setCenter(scroll);
         wurzel.setRight(eigenschaften);
 
+        // Eine zentrale Aktualisierung verhindert widersprüchliche Anzeigen.
+        controller.setNachAenderung(() -> {
+            ansicht.aktualisieren();
+            eigenschaften.anzeigen(controller.getAusgewaehlt().orElse(null));
+            rueckgaengig.setDisable(!controller.kannRueckgaengig());
+            wiederholen.setDisable(!controller.kannWiederholen());
+        });
+        rueckgaengig.setDisable(true);
+        wiederholen.setDisable(true);
+
+        Scene szene = new Scene(wurzel, 1200, 700);
+        szene.addEventFilter(KeyEvent.KEY_PRESSED,
+                e -> tastenkuerzel(e, controller));
         stage.setTitle(TITEL);
-        stage.setScene(new Scene(wurzel, 1200, 700));
+        stage.setScene(szene);
         stage.show();
         ansicht.zeichnen();
     }
 
-    /** Erstellt das bekannte Beispieldiagramm. */
+    /** Die Tastenkürzel bedienen die Diagrammhistorie, auch im Textfeld. */
+    private static void tastenkuerzel(KeyEvent e, DocumentController controller) {
+        if (!e.isControlDown() || e.isAltDown() || e.isMetaDown()) {
+            return;
+        }
+        if (e.getCode() == KeyCode.Z && e.isShiftDown()) {
+            controller.wiederholen();
+            e.consume();
+        } else if (e.getCode() == KeyCode.Z) {
+            controller.rueckgaengig();
+            e.consume();
+        } else if (e.getCode() == KeyCode.Y) {
+            controller.wiederholen();
+            e.consume();
+        }
+    }
+
+    /** Das Startbeispiel gehört nicht zur Undo-Historie. */
     private Diagram beispielDiagramm() {
         Diagram d = Catalog.neuesDiagramm(Catalog.KLASSENDIAGRAMM, "Beispiel");
         Node paket = Catalog.neuesElement("class", "package", "model", 40, 40);
@@ -83,7 +121,6 @@ public class UmlStudioApp extends Application {
         Node status = Catalog.neuesElement("class", "enum", "Status", 750, 300);
         Node notiz = Catalog.neuesElement("class", "note", "Beispieldiagramm", 750, 60);
         person.setParentId(paket.getId());
-
         for (Node n : List.of(paket, person, kunde, zahlbar, status, notiz)) {
             d.addNode(n);
         }

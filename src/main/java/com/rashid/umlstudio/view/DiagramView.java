@@ -1,8 +1,8 @@
 package com.rashid.umlstudio.view;
 
 import java.util.List;
-import java.util.function.Consumer;
 
+import com.rashid.umlstudio.controller.DocumentController;
 import com.rashid.umlstudio.model.Diagram;
 import com.rashid.umlstudio.model.Edge;
 import com.rashid.umlstudio.model.Node;
@@ -19,29 +19,37 @@ import javafx.scene.text.TextAlignment;
 
 /**
  * Zeichenfläche für ein Diagramm.
- * Maus ziehen verschiebt, Shift + ziehen verbindet zwei Elemente.
+ *
+ * Verschieben und Verbinden laufen über den Controller, damit Undo und Redo
+ * möglich sind. Ein vollständiger Mauszug zählt als ein Änderungsschritt.
+ *
+ * Verbinden funktioniert per Shift, rechter Maustaste oder Verbinden-Modus.
  */
 public class DiagramView extends Pane {
 
     private static final Color AUSWAHL = Color.web("#1e88e5");
-    private static final double PFEIL = 14;   // Länge der Pfeilspitze in Pixel
+    private static final double PFEIL = 14;
 
     private final Canvas canvas = new Canvas();
-    private Diagram diagram;
+    private final DocumentController controller;
+    private final Diagram diagram;
 
-    private Node ausgewaehlt;          // aktuell markiertes Element
-    private Node verbindungsStart;     // Start beim Verbinden (Shift)
-    private double letzteX, letzteY;   // letzte Mausposition
+    private Node ausgewaehlt;
+    private Node verbindungsStart;
+    private double letzteX;
+    private double letzteY;
+    private double startX;
+    private double startY;
     private String verbindungsart = "association";
-    private boolean verbindenModus = false;   // true = Ziehen erzeugt Verbindung
-    
-    private Consumer<Node> auswahlGeaendert;
+    private boolean verbindenModus = false;
 
-    public DiagramView(Diagram diagram) {
-        this.diagram = diagram;
+    /** Erstellt die Zeichenfläche für das Diagramm des Controllers. */
+    public DiagramView(DocumentController controller) {
+        this.controller = controller;
+        this.diagram = controller.getDiagram();
         getChildren().add(canvas);
 
-        // Canvas wächst mit dem Fenster mit.
+        // Die Canvas-Größe folgt der Größe dieses Pane.
         canvas.widthProperty().bind(widthProperty());
         canvas.heightProperty().bind(heightProperty());
         canvas.widthProperty().addListener(o -> zeichnen());
@@ -52,12 +60,12 @@ public class DiagramView extends Pane {
         canvas.setOnMouseReleased(this::mausLosgelassen);
     }
 
-    /** Legt fest, welche Verbindungsart beim Verbinden entsteht. */
+    /** Bestimmt die Art neu erstellter Verbindungen. */
     public void setVerbindungsart(String art) {
         this.verbindungsart = art;
     }
-    
-    /** Schaltet den Verbinden-Modus ein oder aus (Knopf in der Werkzeugleiste). */
+
+    /** Aktiviert oder deaktiviert das Verbinden ohne Tastatur. */
     public void setVerbindenModus(boolean an) {
         this.verbindenModus = an;
     }
@@ -65,80 +73,77 @@ public class DiagramView extends Pane {
     public Node getAusgewaehlt() {
         return ausgewaehlt;
     }
-    
-    /** Verbindet die Auswahl der Zeichenfläche mit dem Eigenschaftsfenster. */
-    public void setAuswahlListener(Consumer<Node> listener) {
-        this.auswahlGeaendert = listener;
-    }
 
-    /** Wählt beispielsweise ein über die Palette hinzugefügtes Element aus. */
-    public void auswaehlen(Node n) {
-        this.ausgewaehlt = n;
+    /**
+     * Übernimmt die Auswahl aus dem Controller und zeichnet neu.
+     * Ruft den Controller nicht erneut auf, damit keine Rückkopplung entsteht.
+     */
+    public void aktualisieren() {
+        ausgewaehlt = controller.getAusgewaehlt().orElse(null);
         zeichnen();
-        benachrichtigeAuswahl();
-    }
-
-    /** Meldet das ausgewählte Element und seine aktuellen Werte. */
-    private void benachrichtigeAuswahl() {
-        if (auswahlGeaendert != null) {
-            auswahlGeaendert.accept(ausgewaehlt);
-        }
     }
 
     // ------------------------------------------------------------------ Maus
 
     private void mausGedrueckt(MouseEvent e) {
         Node n = Geometrie.treffer(diagram, e.getX(), e.getY());
-        ausgewaehlt = n;
         boolean verbinden = e.isShiftDown()
                 || e.isSecondaryButtonDown() || verbindenModus;
         verbindungsStart = (n != null && verbinden) ? n : null;
+
+        startX = e.getX();
+        startY = e.getY();
         letzteX = e.getX();
         letzteY = e.getY();
+
+        controller.auswaehlen(n);
+        if (n != null && !verbinden) {
+            controller.zugBeginnen(n);
+        }
         zeichnen();
-        benachrichtigeAuswahl();
     }
 
     private void mausGezogen(MouseEvent e) {
-        if (verbindungsStart == null && ausgewaehlt != null) {
-            double dx = e.getX() - letzteX;
-            double dy = e.getY() - letzteY;
-            ausgewaehlt.verschieben(dx, dy);
-            for (Node kind : Geometrie.nachkommen(diagram, ausgewaehlt)) {
-                kind.verschieben(dx, dy);
-            }
-        }
         letzteX = e.getX();
         letzteY = e.getY();
+
+        if (verbindungsStart == null && controller.getAusgewaehlt().isPresent()) {
+            // Der Abstand bezieht sich immer auf den Anfang des gesamten Zugs.
+            controller.zugAktualisieren(e.getX() - startX, e.getY() - startY);
+        }
         zeichnen();
-        benachrichtigeAuswahl();
     }
 
     private void mausLosgelassen(MouseEvent e) {
         if (verbindungsStart != null) {
             Node ziel = Geometrie.treffer(diagram, e.getX(), e.getY());
-            if (ziel != null && ziel != verbindungsStart) {
-                diagram.addEdge(new Edge(verbindungsart,
-                        verbindungsStart.getId(), ziel.getId()));
-            }
+            controller.verbindungHinzufuegen(
+                    verbindungsart, verbindungsStart, ziel);
             verbindungsStart = null;
+        } else {
+            controller.zugAbschliessen();
         }
+
+        letzteX = e.getX();
+        letzteY = e.getY();
         zeichnen();
-        benachrichtigeAuswahl();
     }
 
     // -------------------------------------------------------------- Zeichnen
 
-    /** Zeichnet das ganze Diagramm neu. */
+    /** Zeichnet alle Elemente, Verbindungen und die Verbindungsvorschau. */
     public void zeichnen() {
         GraphicsContext g = canvas.getGraphicsContext2D();
         g.setFill(Color.WHITE);
         g.fillRect(0, 0, canvas.getWidth(), canvas.getHeight());
 
-        // Zuerst Elemente nach Tiefe (Pakete hinten), dann die Linien darüber.
+        // Eltern werden vor ihren Kindern gezeichnet.
         List<Node> sortiert = diagram.getNodes().stream()
-                .sorted((a, b) -> Integer.compare(Geometrie.tiefe(diagram, a), Geometrie.tiefe(diagram, b)))
+                .sorted((a, b) -> Integer.compare(
+                        Geometrie.tiefe(diagram, a),
+                        Geometrie.tiefe(diagram, b)))
                 .toList();
+
         for (Node n : sortiert) {
             zeichneElement(g, n);
         }
@@ -146,18 +151,23 @@ public class DiagramView extends Pane {
             zeichneVerbindung(g, kante);
         }
 
-        // Gummiband-Linie während des Verbindens
+        // Vorschau während des Verbindens.
         if (verbindungsStart != null) {
             double[] m = Geometrie.mitte(verbindungsStart);
             g.setStroke(AUSWAHL);
             g.setLineDashes(4);
             g.strokeLine(m[0], m[1], letzteX, letzteY);
-            g.setLineDashes(null);
+            g.setLineDashes();
         }
     }
 
+    /** Zeichnet ein Element passend zu seiner Art. */
     private void zeichneElement(GraphicsContext g, Node n) {
-        double x = n.getX(), y = n.getY(), w = n.getW(), h = n.getH();
+        double x = n.getX();
+        double y = n.getY();
+        double w = n.getW();
+        double h = n.getH();
+
         g.setLineWidth(n == ausgewaehlt ? 2.5 : 1.2);
         g.setStroke(n == ausgewaehlt ? AUSWAHL : Color.BLACK);
         g.setTextAlign(TextAlignment.CENTER);
@@ -165,7 +175,7 @@ public class DiagramView extends Pane {
 
         switch (n.getKind()) {
             case "package" -> {
-                // Reiter oben links + Rumpf
+                // Paket mit Reiter und Rumpf.
                 g.setFill(Color.web("#f5f5f5"));
                 g.fillRect(x, y, w * 0.4, 20);
                 g.strokeRect(x, y, w * 0.4, 20);
@@ -174,7 +184,7 @@ public class DiagramView extends Pane {
                 text(g, n.getName(), x + w * 0.2, y + 10, true);
             }
             case "note" -> {
-                // Rechteck mit umgeknickter Ecke
+                // Notiz mit umgeknickter Ecke.
                 double e = 12;
                 double[] px = { x, x + w - e, x + w, x + w, x };
                 double[] py = { y, y, y + e, y + h, y + h };
@@ -186,15 +196,17 @@ public class DiagramView extends Pane {
                 text(g, n.getName(), x + w / 2, y + h / 2, false);
             }
             default -> {
-                // class, interface, enum: Kopf + zwei leere Abschnitte (Attribute/Methoden)
+                // Klasse, Interface oder Enum mit drei Abschnitten.
                 g.setFill(Color.web("#e3f2fd"));
                 g.fillRect(x, y, w, h);
                 g.strokeRect(x, y, w, h);
+
                 String stereotyp = switch (n.getKind()) {
                     case "interface" -> "«interface»";
                     case "enum" -> "«enumeration»";
                     default -> null;
                 };
+
                 double kopf = stereotyp == null ? 28 : 40;
                 if (stereotyp != null) {
                     text(g, stereotyp, x + w / 2, y + 12, false);
@@ -202,6 +214,7 @@ public class DiagramView extends Pane {
                 } else {
                     text(g, n.getName(), x + w / 2, y + 14, true);
                 }
+
                 g.strokeLine(x, y + kopf, x + w, y + kopf);
                 double rest = (h - kopf) / 2;
                 g.strokeLine(x, y + kopf + rest, x + w, y + kopf + rest);
@@ -209,69 +222,103 @@ public class DiagramView extends Pane {
         }
     }
 
-    private void text(GraphicsContext g, String s, double x, double y, boolean fett) {
+    /** Zeichnet eine zentrierte Beschriftung. */
+    private void text(GraphicsContext g, String s,
+            double x, double y, boolean fett) {
         g.setFill(Color.BLACK);
-        g.setFont(Font.font("Segoe UI", fett ? FontWeight.BOLD : FontWeight.NORMAL, 12));
+        g.setFont(Font.font("Segoe UI",
+                fett ? FontWeight.BOLD : FontWeight.NORMAL, 12));
         g.fillText(s == null ? "" : s, x, y);
     }
 
+    /** Zeichnet eine Verbindung mit der zugehörigen UML-Pfeilspitze. */
     private void zeichneVerbindung(GraphicsContext g, Edge kante) {
         Node quelle = diagram.node(kante.getSourceId()).orElse(null);
         Node ziel = diagram.node(kante.getTargetId()).orElse(null);
         if (quelle == null || ziel == null) {
             return;
         }
+
         double[] mq = Geometrie.mitte(quelle);
         double[] mz = Geometrie.mitte(ziel);
-        double[] a = Geometrie.randpunkt(quelle, mz[0], mz[1]);   // Start am Rand
-        double[] b = Geometrie.randpunkt(ziel, mq[0], mq[1]);     // Ende am Rand
+        double[] a = Geometrie.randpunkt(quelle, mz[0], mz[1]);
+        double[] b = Geometrie.randpunkt(ziel, mq[0], mq[1]);
 
         String art = kante.getKind();
-        boolean gestrichelt = art.equals("realization") || art.equals("dependency") || art.equals("note_link");
+        boolean gestrichelt = art.equals("realization")
+                || art.equals("dependency") || art.equals("note_link");
 
         g.setStroke(Color.BLACK);
         g.setLineWidth(1.2);
-        g.setLineDashes(gestrichelt ? new double[] { 6, 4 } : null);
+        if (gestrichelt) {
+            g.setLineDashes(6, 4);
+        } else {
+            g.setLineDashes();
+        }
         g.strokeLine(a[0], a[1], b[0], b[1]);
-        g.setLineDashes(null);
+        g.setLineDashes();
 
         switch (art) {
-            case "generalization", "realization" -> dreieck(g, a, b);   // hohles Dreieck am Ziel
-            case "dependency" -> offenerPfeil(g, a, b);                 // offener Pfeil am Ziel
-            case "aggregation" -> raute(g, b, a, false);                // hohle Raute am Ganzen (Quelle)
-            case "composition" -> raute(g, b, a, true);                 // gefüllte Raute an der Quelle
-            default -> { /* association, note_link: keine Spitze */ }
+            case "generalization", "realization" -> dreieck(g, a, b);
+            case "dependency" -> offenerPfeil(g, a, b);
+            case "aggregation" -> raute(g, b, a, false);
+            case "composition" -> raute(g, b, a, true);
+            default -> {
+                // Assoziationen und Notizverbindungen ohne Pfeilspitze.
+            }
         }
 
         if (kante.getName() != null && !kante.getName().isBlank()) {
-            text(g, kante.getName(), (a[0] + b[0]) / 2, (a[1] + b[1]) / 2 - 10, false);
+            text(g, kante.getName(),
+                    (a[0] + b[0]) / 2,
+                    (a[1] + b[1]) / 2 - 10, false);
         }
     }
 
-    /** Hohles Dreieck mit Spitze bei b. */
+    /** Zeichnet ein hohles Dreieck mit der Spitze bei b. */
     private void dreieck(GraphicsContext g, double[] a, double[] b) {
         double winkel = Math.atan2(b[1] - a[1], b[0] - a[0]);
-        double[] px = { b[0], b[0] - PFEIL * Math.cos(winkel - 0.45), b[0] - PFEIL * Math.cos(winkel + 0.45) };
-        double[] py = { b[1], b[1] - PFEIL * Math.sin(winkel - 0.45), b[1] - PFEIL * Math.sin(winkel + 0.45) };
+        double[] px = {
+                b[0],
+                b[0] - PFEIL * Math.cos(winkel - 0.45),
+                b[0] - PFEIL * Math.cos(winkel + 0.45)
+        };
+        double[] py = {
+                b[1],
+                b[1] - PFEIL * Math.sin(winkel - 0.45),
+                b[1] - PFEIL * Math.sin(winkel + 0.45)
+        };
         g.setFill(Color.WHITE);
         g.fillPolygon(px, py, 3);
         g.strokePolygon(px, py, 3);
     }
 
-    /** Offener Pfeil (zwei Striche) mit Spitze bei b. */
+    /** Zeichnet eine offene Pfeilspitze bei b. */
     private void offenerPfeil(GraphicsContext g, double[] a, double[] b) {
         double winkel = Math.atan2(b[1] - a[1], b[0] - a[0]);
-        g.strokeLine(b[0], b[1], b[0] - PFEIL * Math.cos(winkel - 0.45), b[1] - PFEIL * Math.sin(winkel - 0.45));
-        g.strokeLine(b[0], b[1], b[0] - PFEIL * Math.cos(winkel + 0.45), b[1] - PFEIL * Math.sin(winkel + 0.45));
+        g.strokeLine(b[0], b[1],
+                b[0] - PFEIL * Math.cos(winkel - 0.45),
+                b[1] - PFEIL * Math.sin(winkel - 0.45));
+        g.strokeLine(b[0], b[1],
+                b[0] - PFEIL * Math.cos(winkel + 0.45),
+                b[1] - PFEIL * Math.sin(winkel + 0.45));
     }
 
-    /** Raute mit Spitze bei spitze, Richtung kommt von von. */
-    private void raute(GraphicsContext g, double[] von, double[] spitze, boolean gefuellt) {
-        double winkel = Math.atan2(spitze[1] - von[1], spitze[0] - von[0]);
-        double l = PFEIL, br = 6;
-        double mx = spitze[0] - l * Math.cos(winkel), my = spitze[1] - l * Math.sin(winkel);
-        double ex = spitze[0] - 2 * l * Math.cos(winkel), ey = spitze[1] - 2 * l * Math.sin(winkel);
-        double nx = -Math.sin(winkel) * br, ny = Math.cos(winkel) * br;
+    /** Zeichnet eine hohle oder gefüllte Raute an der angegebenen Spitze. */
+    private void raute(GraphicsContext g,
+            double[] von, double[] spitze, boolean gefuellt) {
+        double winkel = Math.atan2(
+                spitze[1] - von[1], spitze[0] - von[0]);
+        double laenge = PFEIL;
+        double breite = 6;
+
+        double mx = spitze[0] - laenge * Math.cos(winkel);
+        double my = spitze[1] - laenge * Math.sin(winkel);
+        double ex = spitze[0] - 2 * laenge * Math.cos(winkel);
+        double ey = spitze[1] - 2 * laenge * Math.sin(winkel);
+        double nx = -Math.sin(winkel) * breite;
+        double ny = Math.cos(winkel) * breite;
+
         double[] px = { spitze[0], mx + nx, ex, mx - nx };
         double[] py = { spitze[1], my + ny, ey, my - ny };
         g.setFill(gefuellt ? Color.BLACK : Color.WHITE);

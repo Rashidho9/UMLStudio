@@ -1,0 +1,251 @@
+package com.rashid.umlstudio.controller;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+
+import com.rashid.umlstudio.command.Command;
+import com.rashid.umlstudio.command.CommandHistory;
+import com.rashid.umlstudio.model.Diagram;
+import com.rashid.umlstudio.model.Edge;
+import com.rashid.umlstudio.model.ElementBearbeitung;
+import com.rashid.umlstudio.model.ElementStand;
+import com.rashid.umlstudio.model.Node;
+import com.rashid.umlstudio.model.catalog.Catalog;
+
+/**
+ * Vermittelt zwischen Oberfläche und Modell, ohne JavaFX zu benötigen.
+ * Änderungen aus der Oberfläche werden hier als Befehle gespeichert.
+ */
+public class DocumentController {
+
+    private final Diagram diagram;
+    private final CommandHistory history = new CommandHistory();
+    private Runnable nachAenderung;
+    private String ausgewaehltId;
+
+    private Node zugElement;
+    private List<ElementStand> zugStart;
+    private boolean zugAktiv;
+
+    public DocumentController(Diagram diagram) {
+        this.diagram = diagram;
+    }
+
+    public Diagram getDiagram() {
+        return diagram;
+    }
+
+    public CommandHistory getHistory() {
+        return history;
+    }
+
+    /** Meldet Änderungen an die Oberfläche, auch während einer Ziehvorschau. */
+    public void setNachAenderung(Runnable nachAenderung) {
+        this.nachAenderung = nachAenderung;
+    }
+
+    public Optional<Node> getAusgewaehlt() {
+        return ausgewaehltId == null
+                ? Optional.empty() : diagram.node(ausgewaehltId);
+    }
+
+    public void auswaehlen(Node n) {
+        ausgewaehltId = n == null ? null : n.getId();
+        benachrichtigen();
+    }
+
+    /** Während des Ziehens ist Undo gesperrt. */
+    public boolean kannRueckgaengig() {
+        return !zugAktiv && history.kannRueckgaengig();
+    }
+
+    /** Während des Ziehens ist Redo gesperrt. */
+    public boolean kannWiederholen() {
+        return !zugAktiv && history.kannWiederholen();
+    }
+
+    public void rueckgaengig() {
+        if (!kannRueckgaengig()) {
+            return;
+        }
+        history.rueckgaengig();
+        if (ausgewaehltId != null && diagram.node(ausgewaehltId).isEmpty()) {
+            ausgewaehltId = null;
+        }
+        benachrichtigen();
+    }
+
+    public void wiederholen() {
+        if (!kannWiederholen()) {
+            return;
+        }
+        history.wiederholen();
+        benachrichtigen();
+    }
+
+    /** Fügt ein Element hinzu; Redo verwendet dasselbe Objekt mit derselben ID. */
+    public Node elementHinzufuegen(String nodeKindId, String name, double x, double y) {
+        zugZuerstBeenden();
+        Node neu = Catalog.neuesElement(diagram.getType(), nodeKindId, name, x, y);
+        Command befehl = new Command("Element hinzufügen",
+                () -> {
+                    if (!diagram.getNodes().contains(neu)) {
+                        diagram.addNode(neu);
+                    }
+                    ausgewaehltId = neu.getId();
+                },
+                () -> {
+                    diagram.getNodes().remove(neu);
+                    ausgewaehltId = null;
+                });
+        history.ausfuehren(befehl);
+        benachrichtigen();
+        return neu;
+    }
+
+    /** Verbindet vorhandene, unterschiedliche Elemente. */
+    public boolean verbindungHinzufuegen(String art, Node von, Node nach) {
+        zugZuerstBeenden();
+        if (von == null || nach == null || von == nach) {
+            return false;
+        }
+        if (diagram.node(von.getId()).isEmpty()
+                || diagram.node(nach.getId()).isEmpty()) {
+            return false;
+        }
+        Edge kante = new Edge(art, von.getId(), nach.getId());
+        Command befehl = new Command("Verbindung hinzufügen",
+                () -> {
+                    if (!diagram.getEdges().contains(kante)) {
+                        diagram.addEdge(kante);
+                    }
+                },
+                () -> diagram.getEdges().remove(kante));
+        history.ausfuehren(befehl);
+        benachrichtigen();
+        return true;
+    }
+
+    /**
+     * Übernimmt geprüfte Eigenschaften und merkt Vorher-/Nachher-Zustände.
+     * Ungültige oder unveränderte Eingaben erzeugen keinen neuen Befehl.
+     *
+     * @return Fehlermeldung oder null bei Erfolg
+     */
+    public String eigenschaftenUebernehmen(Node element,
+            String name, String xText, String yText,
+            String breiteText, String hoeheText) {
+        if (element == null) {
+            return "Kein Element ausgewählt.";
+        }
+        zugZuerstBeenden();
+        List<ElementStand> vorher = standVon(element);
+        String fehler = ElementBearbeitung.anwenden(
+                diagram, element, name, xText, yText, breiteText, hoeheText);
+        if (fehler != null) {
+            return fehler;
+        }
+        List<ElementStand> nachher = standVon(element);
+        if (vorher.equals(nachher)) {
+            return null;
+        }
+        String id = element.getId();
+        Command befehl = new Command("Eigenschaften ändern",
+                () -> {
+                    stellenHer(nachher);
+                    ausgewaehltId = id;
+                },
+                () -> {
+                    stellenHer(vorher);
+                    ausgewaehltId = id;
+                });
+        history.aufnehmen(befehl);
+        ausgewaehltId = id;
+        benachrichtigen();
+        return null;
+    }
+
+    /** Speichert den Ausgangszustand von Element und Nachkommen. */
+    public void zugBeginnen(Node element) {
+        if (element == null) {
+            return;
+        }
+        zugZuerstBeenden();
+        zugElement = element;
+        zugStart = standVon(element);
+        zugAktiv = true;
+        ausgewaehltId = element.getId();
+        benachrichtigen();
+    }
+
+    /**
+     * Zeigt die Verschiebung relativ zum Startpunkt an.
+     * Noch kein Eintrag in der Befehlshistorie.
+     */
+    public void zugAktualisieren(double dx, double dy) {
+        if (!zugAktiv || zugElement == null || zugStart == null) {
+            return;
+        }
+        stellenHer(zugStart);
+        ElementBearbeitung.verschiebenMitNachkommen(diagram, zugElement, dx, dy);
+        benachrichtigen();
+    }
+
+    /** Fasst den gesamten Mauszug zu einem Undo-Schritt zusammen. */
+    public void zugAbschliessen() {
+        if (!zugAktiv || zugElement == null || zugStart == null) {
+            zugAktiv = false;
+            return;
+        }
+        List<ElementStand> ende = standVon(zugElement);
+        List<ElementStand> start = zugStart;
+        String id = zugElement.getId();
+        zugAktiv = false;
+        zugElement = null;
+        zugStart = null;
+        if (start.equals(ende)) {
+            benachrichtigen();
+            return;
+        }
+        Command befehl = new Command("Verschieben",
+                () -> {
+                    stellenHer(ende);
+                    ausgewaehltId = id;
+                },
+                () -> {
+                    stellenHer(start);
+                    ausgewaehltId = id;
+                });
+        history.aufnehmen(befehl);
+        benachrichtigen();
+    }
+
+    private void zugZuerstBeenden() {
+        if (zugAktiv) {
+            zugAbschliessen();
+        }
+    }
+
+    /** Erstellt Momentaufnahmen des Elements und aller Nachkommen. */
+    private List<ElementStand> standVon(Node element) {
+        List<ElementStand> liste = new ArrayList<>();
+        liste.add(new ElementStand(element));
+        for (String id : diagram.descendants(element.getId())) {
+            diagram.node(id).ifPresent(n -> liste.add(new ElementStand(n)));
+        }
+        return liste;
+    }
+
+    private void stellenHer(List<ElementStand> staende) {
+        for (ElementStand stand : staende) {
+            stand.wiederherstellen(diagram);
+        }
+    }
+
+    private void benachrichtigen() {
+        if (nachAenderung != null) {
+            nachAenderung.run();
+        }
+    }
+}
