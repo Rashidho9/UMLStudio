@@ -1,6 +1,7 @@
 package com.rashid.umlstudio.view;
 
 import java.util.List;
+import java.util.function.Consumer;
 
 import com.rashid.umlstudio.model.Diagram;
 import com.rashid.umlstudio.model.Edge;
@@ -33,6 +34,8 @@ public class DiagramView extends Pane {
     private double letzteX, letzteY;   // letzte Mausposition
     private String verbindungsart = "association";
     private boolean verbindenModus = false;   // true = Ziehen erzeugt Verbindung
+    
+    private Consumer<Node> auswahlGeaendert;
 
     public DiagramView(Diagram diagram) {
         this.diagram = diagram;
@@ -62,18 +65,38 @@ public class DiagramView extends Pane {
     public Node getAusgewaehlt() {
         return ausgewaehlt;
     }
+    
+    /** Verbindet die Auswahl der Zeichenfläche mit dem Eigenschaftsfenster. */
+    public void setAuswahlListener(Consumer<Node> listener) {
+        this.auswahlGeaendert = listener;
+    }
+
+    /** Wählt beispielsweise ein über die Palette hinzugefügtes Element aus. */
+    public void auswaehlen(Node n) {
+        this.ausgewaehlt = n;
+        zeichnen();
+        benachrichtigeAuswahl();
+    }
+
+    /** Meldet das ausgewählte Element und seine aktuellen Werte. */
+    private void benachrichtigeAuswahl() {
+        if (auswahlGeaendert != null) {
+            auswahlGeaendert.accept(ausgewaehlt);
+        }
+    }
 
     // ------------------------------------------------------------------ Maus
 
     private void mausGedrueckt(MouseEvent e) {
         Node n = Geometrie.treffer(diagram, e.getX(), e.getY());
         ausgewaehlt = n;
-        // Verbinden: Shift, rechte Maustaste oder Verbinden-Modus
-        boolean verbinden = e.isShiftDown() || e.isSecondaryButtonDown() || verbindenModus;
+        boolean verbinden = e.isShiftDown()
+                || e.isSecondaryButtonDown() || verbindenModus;
         verbindungsStart = (n != null && verbinden) ? n : null;
         letzteX = e.getX();
         letzteY = e.getY();
         zeichnen();
+        benachrichtigeAuswahl();
     }
 
     private void mausGezogen(MouseEvent e) {
@@ -82,23 +105,26 @@ public class DiagramView extends Pane {
             double dy = e.getY() - letzteY;
             ausgewaehlt.verschieben(dx, dy);
             for (Node kind : Geometrie.nachkommen(diagram, ausgewaehlt)) {
-                kind.verschieben(dx, dy);      // Paketinhalt wandert mit
+                kind.verschieben(dx, dy);
             }
         }
         letzteX = e.getX();
         letzteY = e.getY();
         zeichnen();
+        benachrichtigeAuswahl();
     }
 
     private void mausLosgelassen(MouseEvent e) {
         if (verbindungsStart != null) {
             Node ziel = Geometrie.treffer(diagram, e.getX(), e.getY());
             if (ziel != null && ziel != verbindungsStart) {
-                diagram.addEdge(new Edge(verbindungsart, verbindungsStart.getId(), ziel.getId()));
+                diagram.addEdge(new Edge(verbindungsart,
+                        verbindungsStart.getId(), ziel.getId()));
             }
             verbindungsStart = null;
         }
         zeichnen();
+        benachrichtigeAuswahl();
     }
 
     // -------------------------------------------------------------- Zeichnen
