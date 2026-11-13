@@ -28,6 +28,9 @@ public class DocumentController {
     private List<ElementStand> zugStart;
     private boolean zugAktiv;
 
+    /** NEU Schritt 9: zählt jede echte Änderung (auch Undo/Redo), nicht das Auswählen. */
+    private long version;
+
     public DocumentController(Diagram diagram) {
         this.diagram = diagram;
     }
@@ -38,6 +41,11 @@ public class DocumentController {
 
     public CommandHistory getHistory() {
         return history;
+    }
+
+    /** NEU Schritt 9: aktuelle Änderungsnummer zum Erkennen ungespeicherter Änderungen. */
+    public long getVersion() {
+        return version;
     }
 
     /** Meldet Änderungen an die Oberfläche, auch während einer Ziehvorschau. */
@@ -70,6 +78,7 @@ public class DocumentController {
             return;
         }
         history.rueckgaengig();
+        version++; // NEU Schritt 9
         if (ausgewaehltId != null && diagram.node(ausgewaehltId).isEmpty()) {
             ausgewaehltId = null;
         }
@@ -81,6 +90,7 @@ public class DocumentController {
             return;
         }
         history.wiederholen();
+        version++; // NEU Schritt 9
         benachrichtigen();
     }
 
@@ -100,6 +110,7 @@ public class DocumentController {
                     ausgewaehltId = null;
                 });
         history.ausfuehren(befehl);
+        version++; // NEU Schritt 9
         benachrichtigen();
         return neu;
     }
@@ -123,6 +134,7 @@ public class DocumentController {
                 },
                 () -> diagram.getEdges().remove(kante));
         history.ausfuehren(befehl);
+        version++; // NEU Schritt 9
         benachrichtigen();
         return true;
     }
@@ -161,6 +173,7 @@ public class DocumentController {
                     ausgewaehltId = id;
                 });
         history.aufnehmen(befehl);
+        version++; // NEU Schritt 9
         ausgewaehltId = id;
         benachrichtigen();
         return null;
@@ -218,6 +231,7 @@ public class DocumentController {
                     ausgewaehltId = id;
                 });
         history.aufnehmen(befehl);
+        version++; // NEU Schritt 9
         benachrichtigen();
     }
 
