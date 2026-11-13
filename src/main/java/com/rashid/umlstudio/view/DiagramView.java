@@ -1,4 +1,10 @@
 package com.rashid.umlstudio.view;
+import com.rashid.umlstudio.export.ExportBereich;
+
+import javafx.scene.SnapshotParameters;
+import javafx.scene.image.Image;
+import javafx.scene.image.WritableImage;
+import javafx.scene.image.WritablePixelFormat;
 
 import java.util.List;
 
@@ -137,7 +143,23 @@ public class DiagramView extends Pane {
         g.setFill(Color.WHITE);
         g.fillRect(0, 0, canvas.getWidth(), canvas.getHeight());
 
-        // Eltern werden vor ihren Kindern gezeichnet.
+        inhaltZeichnen(g);
+
+        // Vorschau während des Verbindens (nur auf dem Bildschirm).
+        if (verbindungsStart != null) {
+            double[] m = Geometrie.mitte(verbindungsStart);
+            g.setStroke(AUSWAHL);
+            g.setLineDashes(4);
+            g.strokeLine(m[0], m[1], letzteX, letzteY);
+            g.setLineDashes();
+        }
+    }
+
+    /**
+     * Zeichnet nur den Diagramminhalt: erst die Elemente (Eltern vor
+     * Kindern), danach die Verbindungen. Wird für Bildschirm und Export genutzt.
+     */
+    private void inhaltZeichnen(GraphicsContext g) {
         List<Node> sortiert = diagram.getNodes().stream()
                 .sorted((a, b) -> Integer.compare(
                         Geometrie.tiefe(diagram, a),
@@ -150,15 +172,61 @@ public class DiagramView extends Pane {
         for (Edge kante : diagram.getEdges()) {
             zeichneVerbindung(g, kante);
         }
-
-        // Vorschau während des Verbindens.
-        if (verbindungsStart != null) {
-            double[] m = Geometrie.mitte(verbindungsStart);
-            g.setStroke(AUSWAHL);
-            g.setLineDashes(4);
-            g.strokeLine(m[0], m[1], letzteX, letzteY);
-            g.setLineDashes();
+    }
+    
+    /**
+     * Zeichnet den Exportbereich auf eine unsichtbare Canvas und liefert
+     * das Ergebnis als Bild. Die Auswahl wird dabei nicht markiert.
+     *
+     * Muss im JavaFX-Thread aufgerufen werden (z. B. aus einem Menü).
+     *
+     * @param bereich Ausschnitt des Diagramms, siehe {@link ExportBereich}
+     * @param skala   Vergrößerung, z. B. 2 für ein schärferes Bild
+     * @return das fertige Bild
+     */
+    public WritableImage alsBild(ExportBereich bereich, double skala) {
+        if (skala <= 0) {
+            throw new IllegalArgumentException("Die Skala muss größer als 0 sein.");
         }
+        int breite = (int) Math.ceil(bereich.breite() * skala);
+        int hoehe = (int) Math.ceil(bereich.hoehe() * skala);
+
+        Canvas export = new Canvas(breite, hoehe);
+        GraphicsContext g = export.getGraphicsContext2D();
+        g.setFill(Color.WHITE);
+        g.fillRect(0, 0, breite, hoehe);
+
+        // Vergrößern und so verschieben, dass der Bereich bei (0, 0) beginnt.
+        g.save();
+        g.scale(skala, skala);
+        g.translate(-bereich.x(), -bereich.y());
+
+        // Auswahl kurz ausblenden, damit sie nicht blau im Bild erscheint.
+        Node gemerkt = ausgewaehlt;
+        ausgewaehlt = null;
+        try {
+            inhaltZeichnen(g);
+        } finally {
+            ausgewaehlt = gemerkt;
+            g.restore();
+        }
+
+        SnapshotParameters parameter = new SnapshotParameters();
+        parameter.setFill(Color.WHITE);
+        return export.snapshot(parameter, null);
+    }
+
+    /**
+     * Liest alle Pixel eines Bildes als ARGB-Zahlen aus,
+     * Zeile für Zeile. Passt direkt zu PngExporter.speichern(...).
+     */
+    public static int[] pixel(Image bild) {
+        int breite = (int) bild.getWidth();
+        int hoehe = (int) bild.getHeight();
+        int[] argb = new int[breite * hoehe];
+        bild.getPixelReader().getPixels(0, 0, breite, hoehe,
+                WritablePixelFormat.getIntArgbInstance(), argb, 0, breite);
+        return argb;
     }
 
     /** Zeichnet ein Element passend zu seiner Art. */

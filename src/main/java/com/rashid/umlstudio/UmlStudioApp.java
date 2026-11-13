@@ -1,5 +1,11 @@
 package com.rashid.umlstudio;
 
+import com.rashid.umlstudio.export.ExportBereich;
+import com.rashid.umlstudio.export.PngExporter;
+import com.rashid.umlstudio.export.SvgExporter;
+import javafx.scene.image.WritableImage;
+
+import java.io.IOException;
 import java.io.File;
 import java.nio.file.Path;
 import java.util.List;
@@ -56,6 +62,8 @@ public class UmlStudioApp extends Application {
 
     /** Abstand der automatischen Sicherung in Sekunden. */
     private static final int AUTOSAVE_SEKUNDEN = 30;
+    /** Vergrößerung beim PNG-Export (2 = doppelt so scharf). */
+    private static final double PNG_SKALA = 2.0;
 
     private static final List<String> VERBINDUNGEN = List.of(
             "association", "aggregation", "composition",
@@ -195,8 +203,8 @@ public class UmlStudioApp extends Application {
         titelAktualisieren();
         ansicht.zeichnen();
     }
-
-    /** Datei-Menü mit Tastenkürzeln. */
+    
+    /** Datei- und Export-Menü mit Tastenkürzeln. */
     private MenuBar menue() {
         MenuItem neu = new MenuItem("Neu");
         neu.setAccelerator(new KeyCodeCombination(KeyCode.N, KeyCombination.SHORTCUT_DOWN));
@@ -221,9 +229,23 @@ public class UmlStudioApp extends Application {
         Menu datei = new Menu("Datei");
         datei.getItems().addAll(neu, oeffnen, new SeparatorMenuItem(),
                 speichern, speichernUnter, new SeparatorMenuItem(), beenden);
-        return new MenuBar(datei);
-    }
 
+        // Neu in Schritt 10: Export
+        MenuItem png = new MenuItem("Als PNG exportieren …");
+        png.setAccelerator(new KeyCodeCombination(KeyCode.E, KeyCombination.SHORTCUT_DOWN));
+        png.setOnAction(e -> exportPng());
+
+        MenuItem svg = new MenuItem("Als SVG exportieren …");
+        svg.setAccelerator(new KeyCodeCombination(KeyCode.E,
+                KeyCombination.SHORTCUT_DOWN, KeyCombination.SHIFT_DOWN));
+        svg.setOnAction(e -> exportSvg());
+
+        Menu export = new Menu("Export");
+        export.getItems().addAll(png, svg);
+
+        return new MenuBar(datei, export);
+    }
+    
     // ------------------------------------------------------------ Datei-Aktionen
 
     private void neu() {
@@ -311,6 +333,69 @@ public class UmlStudioApp extends Application {
             return speichern();
         }
         return true; // Nicht speichern
+    }
+    
+    // ------------------------------------------------------------ Export
+
+    /** Exportiert das Diagramm als PNG-Bild (ohne Auswahl, mit Rand). */
+    private void exportPng() {
+        File f = exportAuswahl("Als PNG exportieren",
+                "PNG-Bild (*.png)", PngExporter.ENDUNG).showSaveDialog(stage);
+        if (f == null) {
+            return; // abgebrochen
+        }
+        try {
+            ExportBereich bereich = ExportBereich.berechnen(controller.getDiagram());
+            WritableImage bild = ansicht.alsBild(bereich, PNG_SKALA);
+            Path ziel = PngExporter.speichern(
+                    (int) bild.getWidth(), (int) bild.getHeight(),
+                    DiagramView.pixel(bild), f.toPath());
+            info("PNG exportiert", ziel.toString());
+        } catch (IOException | RuntimeException ex) {
+            fehler("PNG-Export fehlgeschlagen", ex.getMessage());
+        }
+    }
+
+    /** Exportiert das Diagramm als SVG-Vektorgrafik. */
+    private void exportSvg() {
+        File f = exportAuswahl("Als SVG exportieren",
+                "SVG-Grafik (*.svg)", SvgExporter.ENDUNG).showSaveDialog(stage);
+        if (f == null) {
+            return; // abgebrochen
+        }
+        try {
+            Path ziel = SvgExporter.speichern(controller.getDiagram(), f.toPath());
+            info("SVG exportiert", ziel.toString());
+        } catch (IOException ex) {
+            fehler("SVG-Export fehlgeschlagen", ex.getMessage());
+        }
+    }
+
+    /**
+     * Dateiauswahl für den Export. Der Vorschlag ist der Diagrammname,
+     * der Ordner ist der Ordner der Projektdatei (falls vorhanden).
+     */
+    private FileChooser exportAuswahl(String titel, String beschreibung, String endung) {
+        FileChooser auswahl = new FileChooser();
+        auswahl.setTitle(titel);
+        auswahl.getExtensionFilters().add(
+                new FileChooser.ExtensionFilter(beschreibung, "*" + endung));
+        auswahl.setInitialFileName(controller.getDiagram().getName() + endung);
+        zustand.getDatei()
+                .map(p -> p.toAbsolutePath().getParent())
+                .map(Path::toFile)
+                .filter(File::isDirectory)
+                .ifPresent(auswahl::setInitialDirectory);
+        return auswahl;
+    }
+
+    /** Kurze Erfolgsmeldung mit dem Speicherort. */
+    private void info(String kopf, String text) {
+        Alert a = new Alert(Alert.AlertType.INFORMATION, "Gespeichert unter:\n" + text);
+        a.initOwner(stage);
+        a.setTitle(TITEL);
+        a.setHeaderText(kopf);
+        a.showAndWait();
     }
 
     // ------------------------------------------------------------ Autosave
