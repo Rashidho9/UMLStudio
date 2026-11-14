@@ -1,20 +1,20 @@
 package com.rashid.umlstudio;
 
-import com.rashid.umlstudio.export.ExportBereich;
-import com.rashid.umlstudio.export.PngExporter;
-import com.rashid.umlstudio.export.SvgExporter;
-import javafx.scene.image.WritableImage;
-
-import java.io.IOException;
 import java.io.File;
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
 
 import com.rashid.umlstudio.controller.DateiZustand;
 import com.rashid.umlstudio.controller.DocumentController;
+import com.rashid.umlstudio.export.ExportBereich;
+import com.rashid.umlstudio.export.PngExporter;
+import com.rashid.umlstudio.export.SvgExporter;
 import com.rashid.umlstudio.model.Diagram;
 import com.rashid.umlstudio.model.Edge;
+import com.rashid.umlstudio.model.KlassenInhalt;
+import com.rashid.umlstudio.model.KlassenLayout;
 import com.rashid.umlstudio.model.Node;
 import com.rashid.umlstudio.model.Project;
 import com.rashid.umlstudio.model.catalog.Catalog;
@@ -45,6 +45,7 @@ import javafx.scene.control.MenuItem;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.control.ToggleButton;
+import javafx.scene.image.WritableImage;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyCodeCombination;
 import javafx.scene.input.KeyCombination;
@@ -55,7 +56,10 @@ import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 import javafx.util.Duration;
 
-/** Hauptfenster mit Datei-Menü, Autosave, Undo/Redo und Modellprüfung. */
+/**
+ * Hauptfenster mit Datei-Menü, Autosave, Undo/Redo, Modellprüfung und Export.
+ * GEÄNDERT Schritt 11: Das Startbeispiel zeigt Attribute und Methoden.
+ */
 public class UmlStudioApp extends Application {
 
     public static final String TITEL = "UMLStudio";
@@ -203,7 +207,7 @@ public class UmlStudioApp extends Application {
         titelAktualisieren();
         ansicht.zeichnen();
     }
-    
+
     /** Datei- und Export-Menü mit Tastenkürzeln. */
     private MenuBar menue() {
         MenuItem neu = new MenuItem("Neu");
@@ -245,7 +249,7 @@ public class UmlStudioApp extends Application {
 
         return new MenuBar(datei, export);
     }
-    
+
     // ------------------------------------------------------------ Datei-Aktionen
 
     private void neu() {
@@ -334,7 +338,7 @@ public class UmlStudioApp extends Application {
         }
         return true; // Nicht speichern
     }
-    
+
     // ------------------------------------------------------------ Export
 
     /** Exportiert das Diagramm als PNG-Bild (ohne Auswahl, mit Rand). */
@@ -504,6 +508,15 @@ public class UmlStudioApp extends Application {
         Node status = Catalog.neuesElement("class", "enum", "Status", 750, 300);
         Node notiz = Catalog.neuesElement("class", "note", "Beispieldiagramm", 750, 60);
         person.setParentId(paket.getId());
+
+        // NEU Schritt 11: Beispielinhalte für Attribute und Methoden
+        inhalt(person, List.of("- name: String", "- alter: int"),
+                List.of("+ getName(): String"));
+        inhalt(kunde, List.of("- kundennummer: int"),
+                List.of("+ bestellen(): void"));
+        inhalt(zahlbar, List.of(), List.of("+ bezahlen(betrag: double): void"));
+        inhalt(status, List.of("OFFEN", "BEZAHLT", "STORNIERT"), List.of());
+
         for (Node n : List.of(paket, person, kunde, zahlbar, status, notiz)) {
             d.addNode(n);
         }
@@ -512,5 +525,11 @@ public class UmlStudioApp extends Application {
         d.addEdge(new Edge("dependency", zahlbar.getId(), status.getId()));
         d.addEdge(new Edge("note_link", notiz.getId(), kunde.getId()));
         return d;
+    }
+
+    /** NEU Schritt 11: setzt Beispielinhalte und vergrößert den Kasten bei Bedarf. */
+    private static void inhalt(Node n, List<String> attribute, List<String> methoden) {
+        KlassenInhalt.setzen(n, attribute, methoden);
+        KlassenLayout.groesseAnpassen(n);
     }
 }

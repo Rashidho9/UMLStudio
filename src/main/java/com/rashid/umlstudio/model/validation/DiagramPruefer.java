@@ -1,5 +1,7 @@
 package com.rashid.umlstudio.model.validation;
 
+import com.rashid.umlstudio.model.KlassenInhalt;
+
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -104,6 +106,25 @@ public final class DiagramPruefer {
                         "Breite und Höhe müssen endlich und größer als 0 sein."));
             }
             pruefeHierarchie(n, elemente, typ, funde);
+            pruefeAttribute(n, funde);   // NEU Schritt 11
+        }
+    }
+    
+    /** Schritt 11: meldet doppelte Attributnamen und doppelte Methodensignaturen. */
+    private static void pruefeAttribute(Node n, List<Pruefmeldung> funde) {
+        if (!KlassenInhalt.unterstuetzt(n)) {
+            return;
+        }
+        for (String name : KlassenInhalt.doppelteAttribute(n)) {
+            funde.add(meldung("ATTRIBUT_DOPPELT", n.getId(),
+                    "Das Attribut '" + name + "' kommt in '"
+                            + n.getName() + "' mehrfach vor."));
+        }
+        // NEU: gleiche Methode (Name + Parametertypen) mehrfach
+        for (String signatur : KlassenInhalt.doppelteMethoden(n)) {
+            funde.add(meldung("METHODE_DOPPELT", n.getId(),
+                    "Die Methode '" + signatur + "' kommt in '"
+                            + n.getName() + "' mehrfach vor."));
         }
     }
 

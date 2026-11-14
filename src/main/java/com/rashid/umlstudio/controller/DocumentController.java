@@ -1,5 +1,8 @@
 package com.rashid.umlstudio.controller;
 
+import com.rashid.umlstudio.model.KlassenInhalt;
+import com.rashid.umlstudio.model.KlassenLayout;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -142,21 +145,57 @@ public class DocumentController {
     /**
      * Übernimmt geprüfte Eigenschaften und merkt Vorher-/Nachher-Zustände.
      * Ungültige oder unveränderte Eingaben erzeugen keinen neuen Befehl.
+     * Attribute und Methoden bleiben dabei unverändert.
      *
      * @return Fehlermeldung oder null bei Erfolg
      */
     public String eigenschaftenUebernehmen(Node element,
             String name, String xText, String yText,
             String breiteText, String hoeheText) {
+        return eigenschaftenUebernehmen(element, name, xText, yText,
+                breiteText, hoeheText, null, null);
+    }
+
+    /**
+     * NEU Schritt 11: Übernimmt Name, Position, Größe, Attribute und Methoden
+     * als einen einzigen Undo-Schritt. Bei Klassen, Schnittstellen und
+     * Aufzählungen wächst der Kasten automatisch, wenn der Inhalt nicht passt.
+     *
+     * @param attributeText eine Zeile pro Attribut; null = unverändert lassen
+     * @param methodenText  eine Zeile pro Methode; null = unverändert lassen
+     * @return Fehlermeldung oder null bei Erfolg
+     */
+    public String eigenschaftenUebernehmen(Node element,
+            String name, String xText, String yText,
+            String breiteText, String hoeheText,
+            String attributeText, String methodenText) {
         if (element == null) {
             return "Kein Element ausgewählt.";
         }
         zugZuerstBeenden();
+
+        // Erst alles prüfen, dann ändern: so bleibt das Modell bei Fehlern unberührt.
+        boolean klasse = KlassenInhalt.unterstuetzt(element);
+        List<String> attribute = attributeText == null
+                ? KlassenInhalt.attribute(element) : KlassenInhalt.zeilen(attributeText);
+        List<String> methoden = methodenText == null
+                ? KlassenInhalt.methoden(element) : KlassenInhalt.zeilen(methodenText);
+        if (klasse) {
+            String inhaltFehler = KlassenInhalt.pruefe(attribute, methoden);
+            if (inhaltFehler != null) {
+                return inhaltFehler;
+            }
+        }
+
         List<ElementStand> vorher = standVon(element);
         String fehler = ElementBearbeitung.anwenden(
                 diagram, element, name, xText, yText, breiteText, hoeheText);
         if (fehler != null) {
             return fehler;
+        }
+        if (klasse) {
+            KlassenInhalt.setzen(element, attribute, methoden);
+            KlassenLayout.groesseAnpassen(element);
         }
         List<ElementStand> nachher = standVon(element);
         if (vorher.equals(nachher)) {
@@ -178,6 +217,7 @@ public class DocumentController {
         benachrichtigen();
         return null;
     }
+    
 
     /** Speichert den Ausgangszustand von Element und Nachkommen. */
     public void zugBeginnen(Node element) {

@@ -1,5 +1,8 @@
 package com.rashid.umlstudio.export;
 
+import com.rashid.umlstudio.model.KlassenInhalt;
+import com.rashid.umlstudio.model.KlassenLayout;
+
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -100,22 +103,30 @@ public final class SvgExporter {
             }
             default -> {
                 rechteck(sb, x, y, w, h, "#e3f2fd");
-                String stereotyp = switch (n.getKind()) {
-                    case "interface" -> "«interface»";
-                    case "enum" -> "«enumeration»";
-                    default -> null;
-                };
-                double kopf = stereotyp == null ? 28 : 40;
+                String stereotyp = KlassenLayout.stereotyp(n.getKind());
                 if (stereotyp != null) {
                     text(sb, stereotyp, x + w / 2, y + 12, false);
                     text(sb, n.getName(), x + w / 2, y + 28, true);
                 } else {
                     text(sb, n.getName(), x + w / 2, y + 14, true);
                 }
-                linie(sb, x, y + kopf, x + w, y + kopf, false);
-                double rest = (h - kopf) / 2;
-                linie(sb, x, y + kopf + rest, x + w, y + kopf + rest, false);
+                KlassenLayout layout = KlassenLayout.fuer(n);
+                double attributeOben = layout.attributeOben(y);
+                double methodenOben = layout.methodenOben(y);
+                linie(sb, x, attributeOben, x + w, attributeOben, false);
+                linie(sb, x, methodenOben, x + w, methodenOben, false);
+                zeilen(sb, KlassenInhalt.attribute(n), x, attributeOben);
+                zeilen(sb, KlassenInhalt.methoden(n), x, methodenOben);
             }
+        }
+    }
+    
+    /** NEU Schritt 11: Einträge linksbündig untereinander, wie in der DiagramView. */
+    private static void zeilen(StringBuilder sb, List<String> eintraege,
+            double x, double abschnittOben) {
+        for (int i = 0; i < eintraege.size(); i++) {
+            textLinks(sb, eintraege.get(i), x + KlassenLayout.TEXT_EINZUG,
+                    KlassenLayout.zeileY(abschnittOben, i));
         }
     }
 
@@ -231,6 +242,15 @@ public final class SvgExporter {
             sb.append(" font-weight=\"bold\"");
         }
         sb.append('>').append(escape(s)).append("</text>\n");
+    }
+    
+    /** NEU Schritt 11: linksbündiger Text, senkrecht mittig bei y. */
+    private static void textLinks(StringBuilder sb, String s, double x, double y) {
+        sb.append("    <text x=\"").append(zahl(x)).append("\" y=\"").append(zahl(y))
+          .append("\" font-family=\"").append(SCHRIFT).append("\" font-size=\"12\"")
+          .append(" text-anchor=\"start\" dominant-baseline=\"central\"")
+          .append(" fill=\"#000000\" stroke=\"none\">")
+          .append(escape(s)).append("</text>\n");
     }
 
     // ------------------------------------------------------------ Hilfen

@@ -1,21 +1,22 @@
 package com.rashid.umlstudio.view;
-import com.rashid.umlstudio.export.ExportBereich;
-
-import javafx.scene.SnapshotParameters;
-import javafx.scene.image.Image;
-import javafx.scene.image.WritableImage;
-import javafx.scene.image.WritablePixelFormat;
 
 import java.util.List;
 
 import com.rashid.umlstudio.controller.DocumentController;
+import com.rashid.umlstudio.export.ExportBereich;
 import com.rashid.umlstudio.model.Diagram;
 import com.rashid.umlstudio.model.Edge;
+import com.rashid.umlstudio.model.KlassenInhalt;
+import com.rashid.umlstudio.model.KlassenLayout;
 import com.rashid.umlstudio.model.Node;
 
 import javafx.geometry.VPos;
+import javafx.scene.SnapshotParameters;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
+import javafx.scene.image.Image;
+import javafx.scene.image.WritableImage;
+import javafx.scene.image.WritablePixelFormat;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.Pane;
 import javafx.scene.paint.Color;
@@ -30,6 +31,8 @@ import javafx.scene.text.TextAlignment;
  * möglich sind. Ein vollständiger Mauszug zählt als ein Änderungsschritt.
  *
  * Verbinden funktioniert per Shift, rechter Maustaste oder Verbinden-Modus.
+ *
+ * GEÄNDERT Schritt 11: Klassen zeigen Attribute und Methoden in drei Abschnitten.
  */
 public class DiagramView extends Pane {
 
@@ -173,7 +176,7 @@ public class DiagramView extends Pane {
             zeichneVerbindung(g, kante);
         }
     }
-    
+
     /**
      * Zeichnet den Exportbereich auf eine unsichtbare Canvas und liefert
      * das Ergebnis als Bild. Die Auswahl wird dabei nicht markiert.
@@ -264,18 +267,12 @@ public class DiagramView extends Pane {
                 text(g, n.getName(), x + w / 2, y + h / 2, false);
             }
             default -> {
-                // Klasse, Interface oder Enum mit drei Abschnitten.
+                // Klasse, Interface oder Enum mit drei Abschnitten (Schritt 11).
                 g.setFill(Color.web("#e3f2fd"));
                 g.fillRect(x, y, w, h);
                 g.strokeRect(x, y, w, h);
 
-                String stereotyp = switch (n.getKind()) {
-                    case "interface" -> "«interface»";
-                    case "enum" -> "«enumeration»";
-                    default -> null;
-                };
-
-                double kopf = stereotyp == null ? 28 : 40;
+                String stereotyp = KlassenLayout.stereotyp(n.getKind());
                 if (stereotyp != null) {
                     text(g, stereotyp, x + w / 2, y + 12, false);
                     text(g, n.getName(), x + w / 2, y + 28, true);
@@ -283,14 +280,30 @@ public class DiagramView extends Pane {
                     text(g, n.getName(), x + w / 2, y + 14, true);
                 }
 
-                g.strokeLine(x, y + kopf, x + w, y + kopf);
-                double rest = (h - kopf) / 2;
-                g.strokeLine(x, y + kopf + rest, x + w, y + kopf + rest);
+                KlassenLayout layout = KlassenLayout.fuer(n);
+                double attributeOben = layout.attributeOben(y);
+                double methodenOben = layout.methodenOben(y);
+                g.strokeLine(x, attributeOben, x + w, attributeOben);
+                g.strokeLine(x, methodenOben, x + w, methodenOben);
+
+                zeilen(g, KlassenInhalt.attribute(n), x, attributeOben);
+                zeilen(g, KlassenInhalt.methoden(n), x, methodenOben);
             }
         }
     }
 
-    /** Zeichnet eine zentrierte Beschriftung. */
+    /** NEU Schritt 11: Zeichnet Einträge linksbündig untereinander. */
+    private void zeilen(GraphicsContext g, List<String> eintraege,
+            double x, double abschnittOben) {
+        g.setTextAlign(TextAlignment.LEFT);
+        for (int i = 0; i < eintraege.size(); i++) {
+            text(g, eintraege.get(i), x + KlassenLayout.TEXT_EINZUG,
+                    KlassenLayout.zeileY(abschnittOben, i), false);
+        }
+        g.setTextAlign(TextAlignment.CENTER);
+    }
+
+    /** Zeichnet eine Beschriftung (zentriert, außer bei Klasseneinträgen). */
     private void text(GraphicsContext g, String s,
             double x, double y, boolean fett) {
         g.setFill(Color.BLACK);

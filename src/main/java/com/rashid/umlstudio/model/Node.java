@@ -79,7 +79,18 @@ public class Node {
     public double getH() { return h; }
     public String getName() { return name; }
     public String getParentId() { return parentId; }
-    public Map<String, Object> getProps() { return props; }
+    
+    /**
+     * Liefert die freien Eigenschaften, z. B. Attribute und Methoden.
+     * GEÄNDERT Schritt 11: Steht in einer Datei "props": null, wird eine
+     * leere Tabelle angelegt, damit nie null zurückkommt.
+     */
+    public Map<String, Object> getProps() {
+        if (props == null) {
+            props = new HashMap<>();
+        }
+        return props;
+    }
 
     /** Setzt den Namen; null wird zu einem leeren Text. */
     public void setName(String name) {

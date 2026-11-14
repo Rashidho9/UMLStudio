@@ -1,9 +1,11 @@
 package com.rashid.umlstudio.model;
 
+import java.util.List;
 import java.util.Objects;
 
 /**
- * Speichert Name, Position und Größe eines Elements für Undo und Redo.
+ * Speichert Name, Position, Größe sowie (NEU Schritt 11) Attribute und
+ * Methoden eines Elements für Undo und Redo.
  * Beim Wiederherstellen werden Kinder nicht automatisch mitverschoben,
  * weil jedes betroffene Element seine eigene Momentaufnahme erhält.
  */
@@ -15,6 +17,8 @@ public final class ElementStand {
     private final double y;
     private final double w;
     private final double h;
+    private final List<String> attribute;   // NEU Schritt 11
+    private final List<String> methoden;    // NEU Schritt 11
 
     public ElementStand(Node n) {
         id = n.getId();
@@ -23,6 +27,8 @@ public final class ElementStand {
         y = n.getY();
         w = n.getW();
         h = n.getH();
+        attribute = KlassenInhalt.attribute(n);   // bereits unveränderliche Kopie
+        methoden = KlassenInhalt.methoden(n);
     }
 
     public String getId() {
@@ -35,6 +41,7 @@ public final class ElementStand {
             n.setName(name);
             n.verschieben(x - n.getX(), y - n.getY());
             n.setGroesse(w, h);
+            KlassenInhalt.setzen(n, attribute, methoden);
         });
     }
 
@@ -51,11 +58,13 @@ public final class ElementStand {
                 && Double.compare(x, s.x) == 0
                 && Double.compare(y, s.y) == 0
                 && Double.compare(w, s.w) == 0
-                && Double.compare(h, s.h) == 0;
+                && Double.compare(h, s.h) == 0
+                && attribute.equals(s.attribute)
+                && methoden.equals(s.methoden);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(id, name, x, y, w, h);
+        return Objects.hash(id, name, x, y, w, h, attribute, methoden);
     }
 }
